@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Prints the status of the OpenLDAP daemon.
+
+ldapsearch -H ldapi:// -Y EXTERNAL -b "cn=config" -s base -LLL -Q >> /dev/null 2>&1
+
+if [ $? -eq 0 ]; then
+  echo "running"
+  exit 0
+else
+  echo "not available"
+  exit 1
+fi
