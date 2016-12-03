@@ -1,0 +1,16 @@
+version: '2'
+services:
+  ldap:
+    image: rschaeuble/openldap-server
+    build: ./image/
+    ports:
+      - 389:389
+      - 636:636
+
+  backup:
+    image: rschaeuble/openldap-server
+    volumes_from:
+      - ldap
+    volumes:
+      - ./backups:/backups
+    command: /bin/false

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Based on https://blog.panek.work/2015/08/29/openldap_backup_restore.html
+
+set -eu
+
+source `dirname $0`/ldap-functions.sh
+
+function backup_database_with_suffix() {
+  local SUFFIX=$1
+  local BACKUP_DIR=$2
+
+  DB=`find_db_with_suffix $SUFFIX`
+  if [ "$DB" == "" ]; then
+    echo "Database with suffix $SUFFIX not found; aborting"
+    exit 1
+  fi
+
+  echo "Backing up database $SUFFIX ($DB)"
+
+  make_db_readonly $DB
+  slapcat -b $SUFFIX -l $BACKUP_DIR/$SUFFIX.ldif
+  make_db_readwrite $DB
+}
+
+function cleanup_on_exit() {
+  # remove tempory backup directory
+  if [[ "${BACKUP_WORK_DIR-}" != "" && -d $BACKUP_WORK_DIR ]]; then
+    rm -r $BACKUP_WORK_DIR
+  fi
+}
+
+BACKUP_FILE=${1-}
+if [ "${BACKUP_FILE-}" == "" ]; then
+  echo "Usage: `basename $0` <BACKUP FILE>"
+  exit 1
+fi
+
+trap cleanup_on_exit EXIT
+
+BACKUP_NAME=`date -u +"%Y-%m-%dT%H:%M:%SZ"`
+BACKUP_WORK_DIR=`mktemp -d -p ${TMPDIR-/tmp} .ldap-backup-XXXXXX`
+BACKUP_LDAP="$BACKUP_WORK_DIR/ldap"
+BACKUP_STATE="$BACKUP_WORK_DIR/state"
+
+mkdir "$BACKUP_LDAP"
+mkdir "$BACKUP_STATE"
+
+# Backup config database
+slapcat -b cn=config -l $BACKUP_LDAP/cn=config.ldif
+
+# Backup databases
+for SUFFIX in `list_database_suffixes`; do
+  backup_database_with_suffix $SUFFIX $BACKUP_LDAP
+done
+
+# Copy other container internal state
+cp -a /data/state/* $BACKUP_STATE/
+
+tar -cz -C "$BACKUP_WORK_DIR" -f "$BACKUP_FILE" .

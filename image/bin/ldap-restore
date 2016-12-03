@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Based on https://blog.panek.work/2015/08/29/openldap_backup_restore.html
+
+set -eu
+
+source `dirname $0`/ldap-functions.sh
+
+function cleanup_on_exit() {
+  # remove tempory backup directory
+  if [[ "${RESTORE_WORK_DIR-}" != "" && -d $RESTORE_WORK_DIR ]]; then
+    rm -r $RESTORE_WORK_DIR
+  fi
+}
+
+# Restores the specified backup
+function restore_from_backup() {
+  local BACKUP_FILE=$1
+
+  local RESTORE_WORK_DIR=`mktemp -d -p ${TMPDIR-/tmp} .ldap-backup-XXXXXX`
+  tar -x -C "$RESTORE_WORK_DIR" -f "$BACKUP_FILE"
+
+  local RESTORE_LDAP="$RESTORE_WORK_DIR/ldap"
+  local RESTORE_STATE="$RESTORE_WORK_DIR/state"
+
+  # Restore configuration
+  echo "Restoring configuration"
+  rm -r /etc/ldap/slapd.d/*
+  slapadd -F /etc/ldap/slapd.d -b cn=config -l $RESTORE_LDAP/cn=config.ldif
+  chown -R openldap:openldap /etc/ldap/slapd.d
+
+  # Restore databases
+  rm -r /var/lib/ldap/*
+  for FILE in `ls $RESTORE_LDAP/dc=*.ldif`; do
+    DB_NAME=`basename $FILE | sed -n -e 's/\(dc=.*\)\.ldif/\1/p'`
+    echo "Restoring database $DB_NAME from backup file $FILE"
+    slapadd -q -F /etc/ldap/slapd.d -b $DB_NAME -l $FILE
+  done
+  chown -R openldap:openldap /var/lib/ldap
+
+  # Restore state
+  rm /data/state/*
+  cp -a "$RESTORE_STATE"/* /data/state
+}
+
+if [ "${1-}" == "" ]; then
+  echo "Usage: `basename $0` <BACKUP DIRECTORY>"
+  exit 1
+fi
+
+trap cleanup_on_exit EXIT
+
+
+restore_from_backup $1

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Based on https://blog.panek.work/2015/08/29/openldap_backup_restore.html
+
+set -eu
+
+function cleanup_on_exit() {
+  # remove tempory backup directory
+  if [[ "${BACKUP_FILE-}" != "" && -f $BACKUP_FILE ]]; then
+    rm "$BACKUP_FILE" 1>&2 # all output must go to STDERR
+  fi
+}
+
+trap cleanup_on_exit EXIT
+
+BACKUP_FILE=`mktemp -p ${TMPDIR-/tmp} ldap-backup-XXXXXX.tgz`
+
+# create backup file from STDIN
+cat > "$BACKUP_FILE"
+
+# restore backup
+ldap-restore "$BACKUP_FILE"
